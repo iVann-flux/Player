@@ -1,123 +1,173 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-    <title>Playing Stream...</title>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AllInOne Reborn Player</title>
+    
+    <!-- Shaka Player & Icons -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css">
-
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { background: #000; height: 100vh; width: 100vw; overflow: hidden; }
-        .shaka-video-container { position: absolute; inset: 0; width: 100%; height: 100%; }
+        body { 
+            background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; 
+            margin: 0; padding: 0; width: 100vw; height: 100vh; 
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
+        }
+
+        .video-container { 
+            width: 100%; height: 100%; background: #000; position: relative; 
+        }
+        
         video { width: 100%; height: 100%; object-fit: contain; }
-        .error-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 10000; color: white; text-align: center; }
-        .hidden { display: none !important; }
-        .error-content { background: #222; padding: 30px; border-radius: 15px; border: 1px solid #444; }
+
+        /* লকার বা লোডিং স্পিনার */
+        .spinner {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.1);
+            border-top: 4px solid #e50914; border-radius: 50%;
+            animation: spin 0.8s linear infinite; z-index: 25; display: none;
+        }
+        @keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+        /* কাস্টম কন্ট্রোল ডিজাইন */
+        .custom-controls {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            padding: 15px; display: flex; flex-direction: column; gap: 10px;
+            z-index: 20; opacity: 1; transition: opacity 0.4s;
+        }
+
+        .seek-bar-container { width: 100%; height: 4px; background: rgba(255,255,255,0.2); cursor: pointer; position: relative; }
+        .seek-fill { height: 100%; background: #e50914; width: 0%; }
+        
+        .buttons-row { display: flex; justify-content: space-between; align-items: center; }
+        .left-buttons, .right-buttons { display: flex; gap: 15px; align-items: center; }
+        
+        .icon-btn { background: none; border: none; color: white; cursor: pointer; display: flex; }
+        .material-icons { font-size: 30px; }
+        .time-text { font-size: 14px; font-weight: bold; color: #eee; }
+
+        /* এরর মেসেজ */
+        #error-msg { 
+            position: absolute; top: 50%; width: 100%; text-align: center; 
+            color: #ff4444; font-size: 18px; display: none; z-index: 30; 
+        }
     </style>
 </head>
-
 <body>
 
-    <div id="errorModal" class="error-modal hidden">
-        <div class="error-content">
-            <h3 id="errorTitle">Stream Error</h3>
-            <p id="errorMessage"></p>
+    <div class="video-container" id="video-container">
+        <video id="video" autoplay muted playsinline></video>
+        <div id="error-msg">Loading...</div>
+        <div class="spinner" id="buffering-spinner"></div>
+
+        <!-- আপনার পছন্দের ডিজাইন অনুযায়ী কন্ট্রোলস -->
+        <div class="custom-controls" id="controls">
+            <div class="seek-bar-container"><div class="seek-fill" id="seek-fill"></div></div>
+            <div class="buttons-row">
+                <div class="left-buttons">
+                    <button class="icon-btn" id="play-btn"><span class="material-icons">pause</span></button>
+                    <button class="icon-btn" id="mute-btn"><span class="material-icons">volume_up</span></button>
+                    <span class="time-text" id="time-display">LIVE</span>
+                </div>
+                <div class="right-buttons">
+                    <button class="icon-btn" id="full-btn"><span class="material-icons">fullscreen</span></button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="shaka-video-container" id="video-container" data-shaka-player-container>
-        <video id="video" autoplay muted playsinline></video>
-    </div>
-
     <script>
-    async function initApp() {
-        // ১. পলিফিল ইনস্টল (সব ব্রাউজারে সাপোর্টের জন্য)
-        shaka.polyfill.installAll();
-        if (!shaka.Player.isBrowserSupported()) {
-            showError("Browser not supported!");
-            return;
-        }
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const idFromUrl = urlParams.get('id');
-
-        if (!idFromUrl) {
-            showError("No Channel ID provided in URL!");
-            return;
-        }
-
-        // ২. ডাটা ফেচ করা
-        let channelData;
-        try {
-            const response = await fetch('https://allinonereborn.online/jstrweb2/jstr.json');
-            const channels = await response.json();
-            channelData = channels.find(c => c.channel_id === idFromUrl);
-        } catch (e) {
-            showError("Failed to fetch channel list.");
-            return;
-        }
-
-        if (!channelData) {
-            showError("Channel ID not found!");
-            return;
-        }
-
-        // ৩. প্লেয়ার সেটাআপ
+        let player;
         const video = document.getElementById('video');
-        const videoContainer = document.getElementById('video-container');
-        const player = new shaka.Player(video);
-        const ui = new shaka.ui.Overlay(player, videoContainer, video);
+        const spinner = document.getElementById('buffering-spinner');
 
-        // অরিজিনাল স্ক্রিপ্ট অনুযায়ী কনফিগারেশন
-        player.configure({
-            drm: {
-                clearKeys: channelData.drm || {}
-            },
-            streaming: {
-                lowLatencyMode: true,
-                bufferingGoal: 25,
-                rebufferingGoal: 5,
-                ignoreTextStreamFailures: true
+        async function initPlayer() {
+            shaka.polyfill.installAll();
+            player = new shaka.Player(video);
+
+            // ১. ডবল ইউআই বন্ধ করতে শাকার ডিফল্ট ইউআই লোড করা হয়নি
+            
+            // ২. URL থেকে ?play= আইডি নেওয়া
+            const params = new URLSearchParams(window.location.search);
+            const channelId = params.get('play');
+
+            if (!channelId) {
+                showError("Error: Use ?play=CHANNEL_ID");
+                return;
             }
-        });
 
-        // ৪. নেটওয়ার্ক ইঞ্জিন (মোস্ট ইম্পর্ট্যান্ট পার্ট)
-        player.getNetworkingEngine().registerRequestFilter(function(type, request) {
-            // অরিজিনাল স্ক্রিপ্টের মতো হেডার সেট করা
-            request.headers['User-Agent'] = channelData.userAgent || '@allinone_reborn';
-            request.headers['Referer'] = channelData.referer || 'https://www.jiotv.com/';
+            try {
+                // ৩. আপনার দেওয়া জেসন সোর্স
+                const response = await fetch("https://allinonereborn.online/jstrweb2/jstr.json");
+                const channelList = await response.json();
+                const channel = channelList.find(c => c.channel_id == channelId);
 
-            // ৫. টোকেন ইনজেকশন (URI ফিল্টার)
-            // এটি প্রতিটি সেগমেন্ট রিকোয়েস্টের শেষে টোকেন যোগ করবে যাতে ভিডিও আনলক হয়
-            if (type == shaka.net.NetworkingEngine.RequestType.MANIFEST || type == shaka.net.NetworkingEngine.RequestType.SEGMENT) {
-                if (channelData.token) {
-                    const uri = request.uris[0];
-                    if (!uri.includes('__hdnea__')) { // যদি অলরেডি টোকেন না থাকে
-                        const separator = uri.includes('?') ? '&' : '?';
-                        request.uris[0] = uri + separator + channelData.token;
+                if (channel) {
+                    document.title = channel.name;
+
+                    // ৪. নেটওয়ার্ক ইঞ্জিন এবং টোকেন ফিক্স
+                    player.getNetworkingEngine().registerRequestFilter((type, request) => {
+                        request.headers['User-Agent'] = channel.userAgent || '@allinone_reborn';
+                        request.headers['Referer'] = channel.referer || 'https://www.jiotv.com/';
+
+                        if (channel.token && (type === shaka.net.NetworkingEngine.RequestType.MANIFEST || type === shaka.net.NetworkingEngine.RequestType.SEGMENT)) {
+                            const separator = request.uris[0].includes('?') ? '&' : '?';
+                            if (!request.uris[0].includes('__hdnea__')) {
+                                request.uris[0] += separator + channel.token;
+                            }
+                        }
+                    });
+
+                    // ৫. DRM (ClearKeys) সেটআপ
+                    if (channel.drm) {
+                        player.configure({
+                            drm: { clearKeys: channel.drm },
+                            streaming: { lowLatencyMode: true, bufferingGoal: 20 }
+                        });
                     }
+
+                    // ৬. লোড এবং প্লে
+                    await player.load(channel.mpd);
+                    console.log("Stream Loaded Successfully!");
+
+                } else {
+                    showError("Channel Not Found!");
                 }
+            } catch (e) {
+                showError("Stream Error or Network Issue");
             }
-        });
-
-        // ৬. ভিডিও লোড
-        try {
-            await player.load(channelData.mpd);
-            document.title = channelData.name;
-        } catch (error) {
-            showError("Player Load Error: " + error.message);
         }
-    }
 
-    function showError(msg) {
-        document.getElementById('errorMessage').innerText = msg;
-        document.getElementById('errorModal').classList.remove('hidden');
-    }
+        // কন্ট্রোল ফাংশনগুলো
+        document.getElementById('play-btn').onclick = () => {
+            if (video.paused) { video.play(); document.querySelector('#play-btn span').innerText = 'pause'; }
+            else { video.pause(); document.querySelector('#play-btn span').innerText = 'play_arrow'; }
+        };
 
-    document.addEventListener('DOMContentLoaded', initApp);
+        document.getElementById('mute-btn').onclick = () => {
+            video.muted = !video.muted;
+            document.querySelector('#mute-btn span').innerText = video.muted ? 'volume_off' : 'volume_up';
+        };
+
+        document.getElementById('full-btn').onclick = () => {
+            if (!document.fullscreenElement) document.getElementById('video-container').requestFullscreen();
+            else document.exitFullscreen();
+        };
+
+        function showError(msg) {
+            const err = document.getElementById('error-msg');
+            err.style.display = 'block';
+            err.innerText = msg;
+        }
+
+        // বাফারিং হলে স্পিনার দেখাবে
+        video.addEventListener('waiting', () => spinner.style.display = 'block');
+        video.addEventListener('playing', () => spinner.style.display = 'none');
+
+        document.addEventListener('DOMContentLoaded', initPlayer);
     </script>
 </body>
 </html>
