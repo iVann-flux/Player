@@ -2,69 +2,125 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dynamic Player</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Premium Player</title>
+  
+  <!-- Shaka Player UI Libraries -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
+
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
     #video-container { width: 100%; height: 100%; }
-    video { width: 100%; height: 100%; outline: none; }
-    .shaka-range-element { color: #007bff !important; }
+    video { width: 100%; height: 100%; object-fit: contain; }
+
+    /* --- ডাবল UI পুরোপুরি বন্ধ করার জন্য --- */
+    video::-webkit-media-controls,
+    video::-webkit-media-controls-enclosure,
+    video::-webkit-media-controls-panel,
+    video::-webkit-media-controls-play-button,
+    video::-webkit-media-controls-start-playback-button {
+      display: none !important;
+      -webkit-appearance: none !important;
+    }
+
+    /* --- স্ক্রিনশটের মতো লাল সিক-বার (Red Seekbar) --- */
+    .shaka-range-element { color: #ff0000 !important; }
+    .shaka-played-color { background-color: #ff0000 !important; }
+    .shaka-seek-bar-container { height: 6px !important; }
+
+    /* --- লাইভ ডট (Live Dot) --- */
+    .shaka-live-label::before {
+      content: "";
+      display: inline-block;
+      width: 8px; height: 8px;
+      background-color: #ff0000;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+
+    /* --- আইকন কালার সাদা করা --- */
+    .shaka-bottom-controls button, .shaka-current-time {
+      color: white !important;
+    }
+
+    /* --- প্লেয়ার ওভারলে কাস্টমাইজেশন --- */
+    .shaka-video-container:focus { outline: none; }
+    
+    /* ১০ সেকেন্ড স্কিপ এবং বড় প্লে বাটন স্ক্রিনের মাঝখানে রাখার জন্য */
+    .shaka-center-controls {
+      display: flex;
+      gap: 50px;
+    }
   </style>
 </head>
 <body>
 
-  <div data-shaka-player-container id="video-container">
-    <!-- এখানে controls এট্রিবিউট নেই, তাই ডাবল UI আসবে না -->
-    <video autoplay playsinline id="video" data-shaka-player-display></video>
+  <div data-shaka-player-container id="video-container" style="background-color: black;">
+    <!-- "controls" একদম দেওয়া যাবে না -->
+    <video autoplay playsinline id="video" data-shaka-player-display style="width:100%;height:100%;"></video>
   </div>
 
   <script>
-    // URL থেকে ডাটা নেওয়ার লজিক
     const params = new URLSearchParams(window.location.search);
-    const streamUrl = params.get('play'); // 'play' প্যারামিটার থেকে লিঙ্ক নেবে
-    const keyId = params.get('k1');      // 'k1' থেকে Key ID নেবে
-    const keyVal = params.get('k2');     // 'k2' থেকে Key Value নেবে
+    const streamUrl = params.get('play');
+    const keyId = params.get('k1');
+    const keyVal = params.get('k2');
 
-    async function init() {
+    async function initPlayer() {
       const video = document.getElementById('video');
       const container = document.getElementById('video-container');
       const player = new shaka.Player(video);
-      const ui = new shaka.ui.Overlay(player, container, video);
 
+      // UI কনফিগারেশন - স্ক্রিনশটের মতো বাটন সাজানো
+      const ui = new shaka.ui.Overlay(player, container, video);
       ui.configure({
-        'controlPanelElements': ['play_pause', 'mute', 'volume', 'time_and_duration', 'spacer', 'quality', 'fullscreen']
+        'controlPanelElements': [
+          'play_pause', 
+          'mute', 'volume', 
+          'live', // লাইভ ইন্ডিকেটর
+          'spacer', 
+          'quality', 
+          'language', 
+          'picture_in_picture', 
+          'fullscreen'
+        ],
+        'addFastForwardButton': true, // ১০ সেকেন্ড ফরোয়ার্ড
+        'addRewindButton': true,      // ১০ সেকেন্ড রিওয়াইন্ড
+        'doubleClickForSecondaryControls': true, // ডাবল ট্যাপে স্কিপ
+        'seekBarColors': {
+          base: 'rgba(255, 255, 255, 0.3)',
+          buffered: 'rgba(255, 255, 255, 0.5)',
+          played: 'rgb(255, 0, 0)', // লাল সিক বার
+        }
       });
 
-      // যদি URL-এ Key থাকে তবেই DRM কনফিগার করবে
-      if (keyId && keyVal) {
-        player.configure({
-          drm: {
-            clearKeys: { [keyId]: keyVal }
-          }
-        });
-      }
-
+      // ড্রিম এবং বাফার কনফিগারেশন
       player.configure({
-        streaming: { lowLatencyMode: true }
+        drm: {
+          clearKeys: (keyId && keyVal) ? { [keyId]: keyVal } : {}
+        },
+        streaming: {
+          lowLatencyMode: true,
+          bufferingGoal: 15,
+          rebufferingGoal: 5,
+          initialDurationToBuffer: 5 // ৫ সেকেন্ডের সেফটি বাফার
+        }
       });
 
       try {
         if (streamUrl) {
           await player.load(streamUrl);
-          console.log('Video loaded!');
-        } else {
-          console.error('No stream URL provided in parameters.');
         }
-      } catch (error) {
-        console.error('Error loading video', error);
+      } catch (e) {
+        console.error('Error loading video', e);
       }
     }
 
-    document.addEventListener('shaka-ui-loaded', init);
-    
-    // অটো-প্লে ফিক্স
+    // শাকা লোড হলে প্লেয়ার চালু হবে
+    document.addEventListener('shaka-ui-loaded', initPlayer);
+
+    // অটো-প্লে এবং মিউট ফিক্স
     window.addEventListener('click', () => {
         const v = document.getElementById('video');
         if(v.muted) { v.muted = false; }
