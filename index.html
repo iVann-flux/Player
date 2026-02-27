@@ -3,31 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Private Player</title>
+  <title>Dynamic Player</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
   <style>
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
     #video-container { width: 100%; height: 100%; }
-    video { width: 100%; height: 100%; }
-    /* UI Color Theme */
+    video { width: 100%; height: 100%; outline: none; }
     .shaka-range-element { color: #007bff !important; }
-    .shaka-bottom-controls { display: flex; flex-direction: column; }
   </style>
 </head>
 <body>
 
   <div data-shaka-player-container id="video-container">
-    <video autoplay playsinline id="video" data-shaka-player-display poster="https://blogger.googleusercontent.com/img/a/AVvXsEiGqaZeRBZ6Y7yV5ZYSRiNRhBa5q9_EMx7R5TJcHd3XJwwHh2YhNOGt76Y4vEcUIjvIaA7W-Tw1RyMLP-4WZwVHA4mk18zwXl7HdSL5WabprIasDOWJO7jpL0zTQB4p_y7X0Rv0xwe-cJ-GvxofAgeRp2FIiNgB90n_b8Cqw0sAaZqVhJg_fi9UyfSO8KY"></video>
+    <!-- এখানে controls এট্রিবিউট নেই, তাই ডাবল UI আসবে না -->
+    <video autoplay playsinline id="video" data-shaka-player-display></video>
   </div>
 
   <script>
-    const manifestUri = "https://live-pv-ta.amazon.fastly-edge.com/sin-nitro/live/clients/dash/enc/5sxuux529k/out/v1/bb548a3626cd4708afbb94a58d71dce9/cenc.mpd";
-    
-    // DRM Keys (এগুলো পরিবর্তন হলে আপডেট করতে হবে)
-    const clearKeys = {
-      "1d96ab366bbe6451edf7407b58e2fa16": "0116201f4a63ac5bf5787d2c610c41a7"
-    };
+    // URL থেকে ডাটা নেওয়ার লজিক
+    const params = new URLSearchParams(window.location.search);
+    const streamUrl = params.get('play'); // 'play' প্যারামিটার থেকে লিঙ্ক নেবে
+    const keyId = params.get('k1');      // 'k1' থেকে Key ID নেবে
+    const keyVal = params.get('k2');     // 'k2' থেকে Key Value নেবে
 
     async function init() {
       const video = document.getElementById('video');
@@ -39,14 +37,26 @@
         'controlPanelElements': ['play_pause', 'mute', 'volume', 'time_and_duration', 'spacer', 'quality', 'fullscreen']
       });
 
+      // যদি URL-এ Key থাকে তবেই DRM কনফিগার করবে
+      if (keyId && keyVal) {
+        player.configure({
+          drm: {
+            clearKeys: { [keyId]: keyVal }
+          }
+        });
+      }
+
       player.configure({
-        drm: { clearKeys: clearKeys },
         streaming: { lowLatencyMode: true }
       });
 
       try {
-        await player.load(manifestUri);
-        console.log('Video loaded successfully');
+        if (streamUrl) {
+          await player.load(streamUrl);
+          console.log('Video loaded!');
+        } else {
+          console.error('No stream URL provided in parameters.');
+        }
       } catch (error) {
         console.error('Error loading video', error);
       }
@@ -54,7 +64,7 @@
 
     document.addEventListener('shaka-ui-loaded', init);
     
-    // অটো-প্লে সাপোর্ট করার জন্য ক্লিক লিসেনার
+    // অটো-প্লে ফিক্স
     window.addEventListener('click', () => {
         const v = document.getElementById('video');
         if(v.muted) { v.muted = false; }
