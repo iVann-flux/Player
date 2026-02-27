@@ -1,130 +1,266 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Premium Player</title>
-  
-  <!-- Shaka Player UI Libraries -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/controls.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js"></script>
-
-  <style>
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-    #video-container { width: 100%; height: 100%; }
-    video { width: 100%; height: 100%; object-fit: contain; }
-
-    /* --- ডাবল UI পুরোপুরি বন্ধ করার জন্য --- */
-    video::-webkit-media-controls,
-    video::-webkit-media-controls-enclosure,
-    video::-webkit-media-controls-panel,
-    video::-webkit-media-controls-play-button,
-    video::-webkit-media-controls-start-playback-button {
-      display: none !important;
-      -webkit-appearance: none !important;
-    }
-
-    /* --- স্ক্রিনশটের মতো লাল সিক-বার (Red Seekbar) --- */
-    .shaka-range-element { color: #ff0000 !important; }
-    .shaka-played-color { background-color: #ff0000 !important; }
-    .shaka-seek-bar-container { height: 6px !important; }
-
-    /* --- লাইভ ডট (Live Dot) --- */
-    .shaka-live-label::before {
-      content: "";
-      display: inline-block;
-      width: 8px; height: 8px;
-      background-color: #ff0000;
-      border-radius: 50%;
-      margin-right: 5px;
-    }
-
-    /* --- আইকন কালার সাদা করা --- */
-    .shaka-bottom-controls button, .shaka-current-time {
-      color: white !important;
-    }
-
-    /* --- প্লেয়ার ওভারলে কাস্টমাইজেশন --- */
-    .shaka-video-container:focus { outline: none; }
+    <meta charset="UTF-8">
+    <title>My Premium Player</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
-    /* ১০ সেকেন্ড স্কিপ এবং বড় প্লে বাটন স্ক্রিনের মাঝখানে রাখার জন্য */
-    .shaka-center-controls {
-      display: flex;
-      gap: 50px;
-    }
-  </style>
+    <!-- HLS.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <!-- Bootstrap Icons for Player Buttons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <style>
+        /* === Player CSS (Kept original clean design) === */
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { background: #000; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; overflow: hidden; }
+        .player { width: 100%; height: 100vh; background: #000; position: relative; }
+        .video-container { position: relative; width: 100%; height: 100%; background: #000; }
+        video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
+        
+        .loading { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 20; }
+        .spinner { width: 45px; height: 45px; border: 3px solid rgba(255,255,255,0.2); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .error { position: absolute; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; z-index: 30; color: white; text-align: center; padding: 20px; display: none;}
+        
+        .controls { position: absolute; bottom: 0; left: 0; right: 0; padding: 16px 12px 12px 12px; background: linear-gradient(transparent, rgba(0,0,0,0.9)); z-index: 10; opacity: 1; transition: opacity 0.3s ease; }
+        .progress-area { width: 100%; margin-bottom: 15px; cursor: pointer; padding: 15px 0; }
+        .progress-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.3); border-radius: 4px; }
+        .progress-fill { width: 0%; height: 100%; background: #ffd966; border-radius: 4px; position: relative; }
+        
+        .controls-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .left, .right { display: flex; align-items: center; gap: 8px; }
+        
+        button { background: transparent; border: none; color: white; min-width: 44px; height: 44px; font-size: 24px; cursor: pointer; border-radius: 40px; }
+        button:active { background: rgba(255,255,255,0.15); transform: scale(0.95); }
+        
+        .time { color: white; font-size: 13px; font-family: monospace; background: rgba(0,0,0,0.6); padding: 6px 10px; border-radius: 30px; }
+        
+        .volume-wrap { display: flex; align-items: center; gap: 6px; position: relative; }
+        .volume-slider { width: 0; overflow: hidden; transition: width 0.2s; }
+        .volume-wrap:hover .volume-slider { width: 60px; }
+        .volume-slider input { width: 100%; height: 5px; background: rgba(255,255,255,0.3); border-radius: 5px; -webkit-appearance: none; }
+        .volume-slider input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: white; border-radius: 50%; cursor: pointer; }
+        
+        .quality-btn { background: rgba(20,20,30,0.8); border: 0.5px solid rgba(255,255,255,0.2); color: white; padding: 6px 12px; border-radius: 30px; font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; height: 38px; }
+        .quality-btn i { font-size: 15px; color: #ffd966; }
+        
+        .quality-dropdown { position: absolute; bottom: 90px; right: 20px; background: #1e1e1e; border-radius: 16px; min-width: 200px; display: none; z-index: 1000; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+        .quality-dropdown.show { display: block; }
+        .quality-item { padding: 12px 18px; color: white; border-bottom: 1px solid #2a2a2a; cursor: pointer; font-size: 15px; display: flex; justify-content: space-between; }
+        .quality-item.active { background: #2a2a2a; color: #ffd966; }
+        
+        :fullscreen .video-container { width: 100vw; height: 100vh; }
+    </style>
 </head>
 <body>
 
-  <div data-shaka-player-container id="video-container" style="background-color: black;">
-    <!-- "controls" একদম দেওয়া যাবে না -->
-    <video autoplay playsinline id="video" data-shaka-player-display style="width:100%;height:100%;"></video>
-  </div>
+<div class="player">
+    <div class="video-container" id="videoContainer">
+        <video id="video" playsinline autoplay></video>
 
-  <script>
-    const params = new URLSearchParams(window.location.search);
-    const streamUrl = params.get('play');
-    const keyId = params.get('k1');
-    const keyVal = params.get('k2');
+        <!-- Loading Spinner -->
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+        </div>
 
-    async function initPlayer() {
-      const video = document.getElementById('video');
-      const container = document.getElementById('video-container');
-      const player = new shaka.Player(video);
+        <!-- Error Message -->
+        <div class="error" id="error">
+            <div>
+                <i class="bi bi-exclamation-triangle" style="font-size: 44px; color: #ff5e5e;"></i>
+                <p id="errorMsg" style="margin-top: 12px; color: #ccc;">Stream Offline or Invalid URL</p>
+            </div>
+        </div>
 
-      // UI কনফিগারেশন - স্ক্রিনশটের মতো বাটন সাজানো
-      const ui = new shaka.ui.Overlay(player, container, video);
-      ui.configure({
-        'controlPanelElements': [
-          'play_pause', 
-          'mute', 'volume', 
-          'live', // লাইভ ইন্ডিকেটর
-          'spacer', 
-          'quality', 
-          'language', 
-          'picture_in_picture', 
-          'fullscreen'
-        ],
-        'addFastForwardButton': true, // ১০ সেকেন্ড ফরোয়ার্ড
-        'addRewindButton': true,      // ১০ সেকেন্ড রিওয়াইন্ড
-        'doubleClickForSecondaryControls': true, // ডাবল ট্যাপে স্কিপ
-        'seekBarColors': {
-          base: 'rgba(255, 255, 255, 0.3)',
-          buffered: 'rgba(255, 255, 255, 0.5)',
-          played: 'rgb(255, 0, 0)', // লাল সিক বার
+        <!-- Controls -->
+        <div class="controls" id="controls">
+            <!-- Progress Bar -->
+            <div class="progress-area" id="progressArea">
+                <div class="progress-bg">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+
+            <div class="controls-row">
+                <div class="left">
+                    <button id="playPause"><i class="bi bi-pause-fill"></i></button>
+                    <div class="volume-wrap">
+                        <button id="muteBtn"><i class="bi bi-volume-up-fill"></i></button>
+                        <div class="volume-slider">
+                            <input type="range" id="volumeRange" min="0" max="1" step="0.05" value="1">
+                        </div>
+                    </div>
+                    <span class="time" id="timeDisplay">00:00 / 00:00</span>
+                </div>
+
+                <div class="right">
+                    <button class="quality-btn" id="qualityBtn">
+                        <i class="bi bi-gear-fill"></i>
+                        <span id="qualityText">Auto</span>
+                    </button>
+                    <button id="fullscreenBtn"><i class="bi bi-fullscreen"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quality Dropdown -->
+        <div class="quality-dropdown" id="qualityDropdown">
+            <div id="qualityList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // === Clean JavaScript Player Logic ===
+    document.addEventListener("DOMContentLoaded", () => {
+        const video = document.getElementById('video');
+        const playPauseBtn = document.getElementById('playPause');
+        const muteBtn = document.getElementById('muteBtn');
+        const volumeRange = document.getElementById('volumeRange');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const progressArea = document.getElementById('progressArea');
+        const progressFill = document.getElementById('progressFill');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const qualityBtn = document.getElementById('qualityBtn');
+        const qualityDropdown = document.getElementById('qualityDropdown');
+        const qualityList = document.getElementById('qualityList');
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        
+        let hls;
+
+        // 1. Get Stream URL from ?stream= or ?url=
+        const urlParams = new URLSearchParams(window.location.search);
+        const streamUrl = urlParams.get('stream') || urlParams.get('url');
+
+        if (!streamUrl) {
+            loading.style.display = 'none';
+            errorDiv.style.display = 'flex';
+            document.getElementById('errorMsg').innerText = "No Stream URL Provided!";
+            return;
         }
-      });
 
-      // ড্রিম এবং বাফার কনফিগারেশন
-      player.configure({
-        drm: {
-          clearKeys: (keyId && keyVal) ? { [keyId]: keyVal } : {}
-        },
-        streaming: {
-          lowLatencyMode: true,
-          bufferingGoal: 15,
-          rebufferingGoal: 5,
-          initialDurationToBuffer: 5 // ৫ সেকেন্ডের সেফটি বাফার
+        // 2. Initialize HLS.js
+        if (Hls.isSupported()) {
+            hls = new Hls({ maxBufferLength: 30 });
+            hls.loadSource(streamUrl);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                loading.style.display = 'none';
+                video.play().catch(() => console.log("Autoplay blocked by browser"));
+                setupQualityOptions(hls.levels);
+            });
+
+            hls.on(Hls.Events.ERROR, function (event, data) {
+                if (data.fatal) {
+                    loading.style.display = 'none';
+                    errorDiv.style.display = 'flex';
+                }
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // For Safari / iOS
+            video.src = streamUrl;
+            video.addEventListener('loadedmetadata', () => {
+                loading.style.display = 'none';
+                video.play();
+            });
         }
-      });
 
-      try {
-        if (streamUrl) {
-          await player.load(streamUrl);
+        // 3. Play / Pause Logic
+        playPauseBtn.addEventListener('click', () => {
+            if (video.paused) {
+                video.play();
+                playPauseBtn.innerHTML = '<i class="bi bi-pause-fill"></i>';
+            } else {
+                video.pause();
+                playPauseBtn.innerHTML = '<i class="bi bi-play-fill"></i>';
+            }
+        });
+
+        // 4. Mute & Volume Logic
+        muteBtn.addEventListener('click', () => {
+            video.muted = !video.muted;
+            updateVolumeUI();
+        });
+
+        volumeRange.addEventListener('input', (e) => {
+            video.volume = e.target.value;
+            video.muted = video.volume == 0;
+            updateVolumeUI();
+        });
+
+        function updateVolumeUI() {
+            if (video.muted || video.volume == 0) {
+                muteBtn.innerHTML = '<i class="bi bi-volume-mute-fill"></i>';
+                volumeRange.value = 0;
+            } else {
+                muteBtn.innerHTML = '<i class="bi bi-volume-up-fill"></i>';
+                volumeRange.value = video.volume;
+            }
         }
-      } catch (e) {
-        console.error('Error loading video', e);
-      }
-    }
 
-    // শাকা লোড হলে প্লেয়ার চালু হবে
-    document.addEventListener('shaka-ui-loaded', initPlayer);
+        // 5. Time and Progress Bar Logic
+        function formatTime(seconds) {
+            let m = Math.floor(seconds / 60);
+            let s = Math.floor(seconds % 60);
+            return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+        }
 
-    // অটো-প্লে এবং মিউট ফিক্স
-    window.addEventListener('click', () => {
-        const v = document.getElementById('video');
-        if(v.muted) { v.muted = false; }
-    }, {once: true});
-  </script>
+        video.addEventListener('timeupdate', () => {
+            timeDisplay.innerText = `${formatTime(video.currentTime)} / ${formatTime(video.duration || 0)}`;
+            let progress = (video.currentTime / video.duration) * 100;
+            progressFill.style.width = `${progress}%`;
+        });
+
+        progressArea.addEventListener('click', (e) => {
+            let width = progressArea.clientWidth;
+            let clickX = e.offsetX;
+            video.currentTime = (clickX / width) * video.duration;
+        });
+
+        // 6. Fullscreen Logic
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.getElementById('videoContainer').requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        // 7. Quality Switcher Logic
+        qualityBtn.addEventListener('click', () => {
+            qualityDropdown.classList.toggle('show');
+        });
+
+        function setupQualityOptions(levels) {
+            qualityList.innerHTML = `<div class="quality-item active" data-level="-1">Auto</div>`;
+            levels.slice().reverse().forEach((level, index) => {
+                let actualIndex = levels.length - 1 - index;
+                qualityList.innerHTML += `<div class="quality-item" data-level="${actualIndex}">${level.height}p</div>`;
+            });
+
+            document.querySelectorAll('.quality-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    document.querySelectorAll('.quality-item').forEach(i => i.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    let level = this.getAttribute('data-level');
+                    hls.currentLevel = parseInt(level);
+                    document.getElementById('qualityText').innerText = this.innerText;
+                    qualityDropdown.classList.remove('show');
+                });
+            });
+        }
+
+        // Hide dropdown when clicked outside
+        document.addEventListener('click', (e) => {
+            if (!qualityBtn.contains(e.target) && !qualityDropdown.contains(e.target)) {
+                qualityDropdown.classList.remove('show');
+            }
+        });
+    });
+</script>
 </body>
 </html>
